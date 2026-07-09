@@ -1,0 +1,154 @@
+"""Two-layer local storage.
+
+    ~/.runahead/       user-scoped, permanent, never committed, never uploaded
+    .git/runahead/     repo-scoped, disposable
+
+Learning data must not live in the repo. Committed statistics get averaged
+across teammates, and an averaged habit predicts nobody's.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from .beta import Beta
+
+PRIOR_STRENGTH = 2.0
+"""Weight of the global habit when seeding a fresh repo.
+
+kappa=2 means a new repo starts at Beta(1 + 2*g, 1 + 2*(1-g)). With no global
+data at all that is Beta(2, 2): mean 0.5, stdev 0.22 — uncertain enough that
+Thompson sampling still explores.
+"""
+
+
+def _key(task_kind: str, action_kind: str) -> str:
+    return f"{task_kind}|{action_kind}"
+
+
+def _counts(raw: dict, key: str) -> tuple[float, float]:
+    entry = raw.get(key)
+    if not entry:
+        return 0.0, 0.0
+    return float(entry.get("accepted", 0)), float(entry.get("rejected", 0))
+
+
+@dataclass
+class Store:
+    """Hierarchical Beta counters: global prior, per-repo posterior."""
+
+    root: Path
+    repo_id: str
+    _global: dict = field(default_factory=dict)
+    _repo: dict = field(default_factory=dict)
+
+    @classmethod
+    def open(cls, repo_path: Path, root: Path | None = None) -> "Store":
+        root = root or Path(os.environ.get("RUNAHEAD_HOME", Path.home() / ".runahead"))
+        repo_id = hashlib.sha256(str(repo_path.resolve()).encode()).hexdigest()[:16]
+        store = cls(root=root, repo_id=repo_id)
+        store._global = _read_json(store.global_path)
+        store._repo = _read_json(store.repo_path)
+        return store
+
+    @property
+    def global_path(self) -> Path:
+        return self.root / "priors.json"
+
+    @property
+    def repo_path(self) -> Path:
+        return self.root / "repos" / f"{self.repo_id}.json"
+
+    @property
+    def history_path(self) -> Path:
+        return self.root / "history.jsonl"
+
+    def known_pairs(self) -> list[tuple[str, str]]:
+        """Every (task_kind, action_kind) either layer has ever seen."""
+        keys = set(self._global) | set(self._repo)
+        return sorted(tuple(k.split("|", 1)) for k in keys if "|" in k)
+
+    def global_mean(self, task_kind: str, action_kind: str) -> float:
+        accepted, rejected = _counts(self._global, _key(task_kind, action_kind))
+        return (accepted + 1.0) / (accepted + rejected + 2.0)
+
+    def posterior(self, task_kind: str, action_kind: str) -> Beta:
+        """Repo observations layered on a prior derived from global habit."""
+        g = self.global_mean(task_kind, action_kind)
+        prior_alpha = 1.0 + PRIOR_STRENGTH * g
+        prior_beta = 1.0 + PRIOR_STRENGTH * (1.0 - g)
+
+        accepted, rejected = _counts(self._repo, _key(task_kind, action_kind))
+        return Beta(prior_alpha + accepted, prior_beta + rejected)
+
+    def record(self, task_kind: str, action_kind: str, accepted: bool) -> None:
+        for raw in (self._global, self._repo):
+            entry = raw.setdefault(_key(task_kind, action_kind), {"accepted": 0, "rejected": 0})
+            entry["accepted" if accepted else "rejected"] += 1
+
+    def record_miss(self, task_kind: str, requested: str) -> None:
+        """The human ignored the queue entirely and asked for something else.
+
+        The single most informative signal we get: it names an action the
+        predictor failed to imagine. Never derivable from accept/reject alone.
+        """
+        self.append_history({"event": "miss", "task_kind": task_kind, "requested": requested})
+
+    def record_conflict(self, first: str, second: str) -> None:
+        """Two actions accepted together whose patches would not compose.
+
+        Not a bug. A label: do not propose this pair together again.
+        """
+        self.append_history({"event": "conflict", "actions": sorted([first, second])})
+
+    def append_history(self, event: dict) -> None:
+        self.history_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(event)
+        payload.setdefault("at", int(time.time()))
+        with self.history_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def miss_rate(self, window: int = 50) -> float | None:
+        """The metric that gates depth. Not the accept rate.
+
+        Accept rate is measured only over what we chose to show; it climbs as
+        the system narrows onto its own habits. Miss rate cannot be gamed that
+        way -- it counts the times the human wanted something we never offered.
+        """
+        events = [e for e in self._history() if e.get("event") in ("miss", "queue_resolved")]
+        if not events:
+            return None
+        recent = events[-window:]
+        misses = sum(1 for e in recent if e["event"] == "miss")
+        return misses / len(recent)
+
+    def _history(self) -> list[dict]:
+        if not self.history_path.exists():
+            return []
+        out = []
+        for line in self.history_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                out.append(json.loads(line))
+        return out
+
+    def flush(self) -> None:
+        _write_json(self.global_path, self._global)
+        _write_json(self.repo_path, self._repo)
+
+
+def _read_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8") or "{}")
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
