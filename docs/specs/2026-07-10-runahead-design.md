@@ -240,16 +240,22 @@ budget: { tokens: 200_000, wall_clock: 30m, max_actions: 12 }
 두 층으로 쪼갠다. **이걸 안 나누면 개인화가 조용히 망가진다.**
 
 ```
-.git/runahead/          레포 종속 · 임시 · gitignore 대상
-  worktrees/           격리된 실행 공간
-  patches/             행동별 패치
-  queue.json           현재 리뷰 큐 상태
+.git/runahead/              레포 종속 · 임시 · 에이전트가 여기서 실행되지 않음
+  patches/                  행동별 패치
+  queue.json                현재 리뷰 큐 상태
 
-~/.runahead/            사용자 종속 · 영구 · 절대 커밋 안 됨 · 서버 안 감
-  priors.json          전역 Beta 카운터 (§6.3)
-  repos/<hash>.json    레포별 Beta 카운터 (전역을 prior로)
-  history.jsonl        수락/거부/miss/충돌 원장
+~/.cache/runahead/          투기가 실제로 실행되는 곳
+  worktrees/<repo>/<action>
+
+~/.runahead/                사용자 종속 · 영구 · 절대 커밋 안 됨 · 서버 안 감
+  priors.json               전역 Beta 카운터 (§6.3)
+  repos/<hash>.json         레포별 Beta 카운터 (전역을 prior로)
+  history.jsonl             수락/거부/miss/충돌 원장
 ```
+
+**worktree는 반드시 `.git` 바깥에 있어야 한다.** 코딩 에이전트에게 `.git` 내부를 작업 디렉토리로 주면 아무것도 편집하지 않은 채 **성공을 반환하고 토큰을 청구한다.** 종료 코드에는 아무 표시가 없고, 빈 패치만이 유일한 증상이다. 실제 에이전트를 붙이기 전까지는 드러나지 않으므로 (페이크 실행기는 파이썬으로 직접 파일을 쓴다) 회귀 테스트로 못 박는다.
+
+작업 트리 안에 두어서도 안 된다. `git status`가 더러워지고, `accept`는 깨끗한 트리를 전제로 한다.
 
 학습 데이터를 레포에 커밋하면 습관 통계가 팀원과 섞인다. 개인화가 아니라 **평균화**다. 동료는 커밋 전에 항상 문서를 쓰고 나는 안 쓴다면, 섞인 통계는 둘 다 틀리게 예측한다.
 

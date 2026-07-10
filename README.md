@@ -79,16 +79,21 @@ A budget (tokens, wall clock, action count) bounds the reversible work too. Nobo
 ## Storage
 
 ```
-~/.runahead/        yours. permanent. never committed, never uploaded.
-  priors.json       global Beta counters
-  repos/<id>.json   per-repo counters, seeded from the global prior
-  history.jsonl     accepts, rejects, misses, conflicts
+~/.runahead/         yours. permanent. never committed, never uploaded.
+  priors.json        global Beta counters
+  repos/<id>.json    per-repo counters, seeded from the global prior
+  history.jsonl      accepts, rejects, misses, conflicts
 
-.git/runahead/      this repo's. disposable.
-  worktrees/  patches/  queue.json
+~/.cache/runahead/   where speculation actually runs
+  worktrees/<repo>/<action>
+
+.git/runahead/       this repo's. disposable.
+  patches/  queue.json
 ```
 
 Learning data stays out of the repo on purpose. Commit it and your habits average with your teammates', and an averaged habit predicts nobody.
+
+Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens — the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
 
 ## Install
 
@@ -162,7 +167,11 @@ They compose: an action with low confidence needs competing variants, which is e
 
 ## Status
 
-v1. The core has 32 tests and no LLM in any of them — swap in `FakeExecutor` and the scheduler, budget, boundary, and patch merge all run for real. That's the second reason the executor is a separate seam.
+v1, exercised end to end against a real `claude`: it read a freshly committed `parse_duration()` that silently returned `0` on garbage input, proposed error handling and documentation, wrote validation plus tests for the first, and — since both patches touched the same file — applied one, isolated the other as a conflict, rolled the tree back clean, and stored the pair as a label.
+
+The core has 35 tests and no LLM in any of them. Swap in `FakeExecutor` and the scheduler, budget, boundary, and patch merge all run for real. That's the second reason the executor is a separate seam.
+
+Chains run one at a time. The name says parallel; v1 is serial on purpose, because the rate limit is the real bottleneck and the safe concurrency has to be measured before it is chosen.
 
 The unproven claim is whether `p` converges to something useful at three to five samples per session. Falling miss rate over many sessions is the only evidence that would settle it. If it doesn't converge, runahead collapses into a hand-written post-task script, and the interesting part was never real.
 
@@ -317,7 +326,13 @@ runahead는 **같은 줄기를 시간 방향으로** 병렬화한다.
 
 ## 상태
 
-v1. 코어에 테스트 32개가 있고 그 안에 LLM은 하나도 없다. `FakeExecutor`를 꽂으면 스케줄러·예산·경계·패치 머지가 전부 실제로 돈다. 실행기를 별도 이음매로 분리한 두 번째 이유가 이것이다.
+v1. 실제 `claude`로 전 구간을 돌렸다. 방금 커밋된 `parse_duration()`이 잘못된 입력에 조용히 `0`을 반환하는 것을 읽어내, 에러 처리와 문서화를 제안하고, 전자에 검증과 테스트를 붙였다. 두 패치가 같은 파일을 건드렸으므로 하나만 적용하고 나머지는 충돌로 격리한 뒤 트리를 깨끗하게 되돌리고, 그 쌍을 라벨로 저장했다.
+
+코어에 테스트 35개가 있고 그 안에 LLM은 하나도 없다. `FakeExecutor`를 꽂으면 스케줄러·예산·경계·패치 머지가 전부 실제로 돈다. 실행기를 별도 이음매로 분리한 두 번째 이유가 이것이다.
+
+체인은 하나씩 순차로 돈다. 이름은 병렬이지만 v1은 의도적으로 직렬이다. 레이트 리밋이 실제 병목이고, 안전한 동시 실행 수는 고르기 전에 측정해야 하기 때문이다.
+
+또한 `~/.cache/runahead/` 아래에 worktree를 둔다. `.git` 안이면 에이전트가 아무것도 안 하고 성공을 반환한다.
 
 **아직 증명되지 않은 주장**은 세션당 서너 개의 샘플로 `p`가 쓸 만하게 수렴하는가이다. 여러 세션에 걸친 miss rate 하락만이 이를 판정할 수 있다. 수렴하지 않는다면 runahead는 손으로 쓴 후처리 스크립트로 쪼그라들고, 흥미로웠던 부분은 처음부터 없었던 것이 된다.
 

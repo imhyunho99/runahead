@@ -73,6 +73,12 @@ def _run(repo: Path, store: Store, args) -> int:
     print(f"speculating on {len(chains)} chains ({task_kind})", file=sys.stderr)
     done = execute(repo, ClaudeExecutor(), chains, budget)
 
+    barren = budget.actions_used - sum(len(c.results) for c in done)
+    if barren:
+        # An agent that edits nothing still costs tokens and still reports
+        # success. Never let that pass silently.
+        print(f"{barren} action(s) produced no patch", file=sys.stderr)
+
     queue = Queue.build(args.task, task_kind, done)
     queue.save(repo)
     print(queue.render(budget.summary()))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 import subprocess
 from contextlib import contextmanager
@@ -32,9 +34,26 @@ def repo_root(start: Path) -> Path:
 
 
 def state_dir(repo: Path) -> Path:
+    """Patches and the queue. No agent ever runs here, so .git is safe."""
     path = repo / ".git" / "runahead"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def worktrees_root(repo: Path) -> Path:
+    """Where speculation runs. Deliberately outside the repository.
+
+    Not under .git: a coding agent given a cwd inside .git silently declines to
+    touch anything, returns success, and bills you for the tokens. Nothing in
+    the exit code says so -- the patch just comes back empty.
+
+    Not inside the working tree either: that would dirty `git status`, and a
+    clean tree is what `accept` requires before it applies anything.
+    """
+    override = os.environ.get("RUNAHEAD_WORKTREES")
+    base = Path(override) if override else Path.home() / ".cache" / "runahead" / "worktrees"
+    repo_id = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:16]
+    return base / repo_id
 
 
 @contextmanager
@@ -43,7 +62,7 @@ def worktree(repo: Path, name: str) -> Iterator[Path]:
 
     Speculation happens here and nowhere else.
     """
-    path = state_dir(repo) / "worktrees" / name
+    path = worktrees_root(repo) / name
     if path.exists():
         remove_worktree(repo, path)
     path.parent.mkdir(parents=True, exist_ok=True)

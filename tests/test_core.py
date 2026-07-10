@@ -251,6 +251,52 @@ class TestSchedulerRespectsBoundaries(unittest.TestCase):
             self.assertLessEqual(sum(len(c.results) for c in done), 1)
 
 
+class TestWorktreeLocation(unittest.TestCase):
+    """A coding agent handed a cwd inside .git edits nothing, returns success,
+    and bills for the tokens. The empty patch is the only symptom. Keep
+    speculation out of .git, and out of the working tree that `accept` needs clean.
+    """
+
+    def test_worktrees_live_outside_the_repository(self):
+        with tempfile.TemporaryDirectory() as rd, tempfile.TemporaryDirectory() as cache:
+            repo = _make_repo(Path(rd))
+            import os
+
+            os.environ["RUNAHEAD_WORKTREES"] = cache
+            try:
+                from runahead.worktree import worktrees_root
+
+                root = worktrees_root(repo).resolve()
+            finally:
+                del os.environ["RUNAHEAD_WORKTREES"]
+
+            self.assertFalse(root.is_relative_to(repo.resolve() / ".git"))
+            self.assertFalse(root.is_relative_to(repo.resolve()))
+
+    def test_default_root_is_not_under_dot_git(self):
+        with tempfile.TemporaryDirectory() as rd:
+            repo = _make_repo(Path(rd))
+            from runahead.worktree import worktrees_root
+
+            self.assertFalse(worktrees_root(repo).resolve().is_relative_to(repo.resolve()))
+
+    def test_speculation_does_not_dirty_the_working_tree(self):
+        with tempfile.TemporaryDirectory() as rd, tempfile.TemporaryDirectory() as cache:
+            import os
+
+            repo = _make_repo(Path(rd))
+            os.environ["RUNAHEAD_WORKTREES"] = cache
+            try:
+                from runahead.worktree import git, worktree
+
+                with worktree(repo, "probe") as work:
+                    (work / "scratch.txt").write_text("x", encoding="utf-8")
+                    self.assertEqual(git(repo, "status", "--porcelain").strip(), "")
+                self.assertEqual(git(repo, "status", "--porcelain").strip(), "")
+            finally:
+                del os.environ["RUNAHEAD_WORKTREES"]
+
+
 def _make_repo(path: Path) -> Path:
     from runahead.worktree import git
 
