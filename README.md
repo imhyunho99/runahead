@@ -123,6 +123,12 @@ runahead miss "write a migration for the new column"
 runahead stats
 ```
 
+To see the learning loop converge without spending a single token, run it against a synthetic user:
+
+```bash
+runahead simulate
+```
+
 ```
 task (feature): add retry logic to the http client
 
@@ -169,11 +175,25 @@ They compose: an action with low confidence needs competing variants, which is e
 
 v1, exercised end to end against a real `claude`: it read a freshly committed `parse_duration()` that silently returned `0` on garbage input, proposed error handling and documentation, wrote validation plus tests for the first, and — since both patches touched the same file — applied one, isolated the other as a conflict, rolled the tree back clean, and stored the pair as a label.
 
-The core has 35 tests and no LLM in any of them. Swap in `FakeExecutor` and the scheduler, budget, boundary, and patch merge all run for real. That's the second reason the executor is a separate seam.
+The core has 43 tests and no LLM in any of them. Swap in `FakeExecutor` and the scheduler, budget, boundary, and patch merge all run for real. That's the second reason the executor is a separate seam.
 
 Chains run one at a time. The name says parallel; v1 is serial on purpose, because the rate limit is the real bottleneck and the safe concurrency has to be measured before it is chosen.
 
-The unproven claim is whether `p` converges to something useful at three to five samples per session. Falling miss rate over many sessions is the only evidence that would settle it. If it doesn't converge, runahead collapses into a hand-written post-task script, and the interesting part was never real.
+The claim runahead lives on is that `p` converges to something useful. `runahead simulate` drives the real learning path — plan()'s Thompson ranking, the policy, the store — against a synthetic user whose preferences are fixed in advance, and watches the statistics find them:
+
+```
+miss rate, early to late
+  12%  0%  2%  0%  0%  0%  0%  0%  0%  0%
+
+action            true p  learned   shown late
+write-tests         0.90     0.89        100%
+draft-commit        0.85     0.84        100%
+add-edge-cases      0.48     0.25          0%
+```
+
+Two facts fall out, one reassuring and one worth stating plainly. Wanted actions — the ones that stay in the queue — are estimated accurately and take every slot within a few dozen sessions, and the miss rate drops to zero. Distractors converge to an *under*estimate (0.48 learned as 0.25), because an action that stops being shown stops being learned about; its estimate freezes low. That is correct behaviour, not a bug — the estimate only has to be low enough to keep the action out, and Thompson sampling stops it collapsing to zero so it can still be revived if the real preference shifts.
+
+This validates the mechanism under a stated user model. It does not prove real humans behave this way — only real use, and a falling miss rate over real sessions, settles that. But convergence failing here would have ruled it out, so the cheap falsifier passed.
 
 MIT.
 
@@ -298,6 +318,12 @@ runahead miss "새 컬럼 마이그레이션 작성"
 runahead stats
 ```
 
+토큰 한 개 안 쓰고 학습 루프가 수렴하는 걸 보려면 합성 사용자로 돌린다.
+
+```bash
+runahead simulate
+```
+
 당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 — 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
 
 ## 에이전트
@@ -328,12 +354,26 @@ runahead는 **같은 줄기를 시간 방향으로** 병렬화한다.
 
 v1. 실제 `claude`로 전 구간을 돌렸다. 방금 커밋된 `parse_duration()`이 잘못된 입력에 조용히 `0`을 반환하는 것을 읽어내, 에러 처리와 문서화를 제안하고, 전자에 검증과 테스트를 붙였다. 두 패치가 같은 파일을 건드렸으므로 하나만 적용하고 나머지는 충돌로 격리한 뒤 트리를 깨끗하게 되돌리고, 그 쌍을 라벨로 저장했다.
 
-코어에 테스트 35개가 있고 그 안에 LLM은 하나도 없다. `FakeExecutor`를 꽂으면 스케줄러·예산·경계·패치 머지가 전부 실제로 돈다. 실행기를 별도 이음매로 분리한 두 번째 이유가 이것이다.
+코어에 테스트 43개가 있고 그 안에 LLM은 하나도 없다. `FakeExecutor`를 꽂으면 스케줄러·예산·경계·패치 머지가 전부 실제로 돈다. 실행기를 별도 이음매로 분리한 두 번째 이유가 이것이다.
 
 체인은 하나씩 순차로 돈다. 이름은 병렬이지만 v1은 의도적으로 직렬이다. 레이트 리밋이 실제 병목이고, 안전한 동시 실행 수는 고르기 전에 측정해야 하기 때문이다.
 
 또한 `~/.cache/runahead/` 아래에 worktree를 둔다. `.git` 안이면 에이전트가 아무것도 안 하고 성공을 반환한다.
 
-**아직 증명되지 않은 주장**은 세션당 서너 개의 샘플로 `p`가 쓸 만하게 수렴하는가이다. 여러 세션에 걸친 miss rate 하락만이 이를 판정할 수 있다. 수렴하지 않는다면 runahead는 손으로 쓴 후처리 스크립트로 쪼그라들고, 흥미로웠던 부분은 처음부터 없었던 것이 된다.
+**runahead가 목숨을 거는 주장**은 `p`가 쓸 만하게 수렴하는가이다. `runahead simulate`는 실제 학습 경로(plan()의 Thompson 순위 매기기, 정책, 저장소)를 **선호도가 미리 정해진 합성 사용자**에게 태우고, 통계가 그 선호를 찾아내는지 본다.
+
+```
+miss rate, early to late
+  12%  0%  2%  0%  0%  0%  0%  0%  0%  0%
+
+action            true p  learned   shown late
+write-tests         0.90     0.89        100%
+draft-commit        0.85     0.84        100%
+add-edge-cases      0.48     0.25          0%
+```
+
+두 가지가 딸려 나온다. 하나는 안심되는 것, 하나는 정직하게 짚어야 할 것. **원하는 행동**(큐에 남는 것)은 정확히 추정되고 수십 세션 안에 모든 슬롯을 차지하며, miss rate는 0으로 떨어진다. **방해 행동**은 **과소추정**으로 수렴한다(실제 0.48이 0.25로). 안 보여주기 시작한 행동은 학습이 멈추고 추정값이 낮은 값에 얼어붙기 때문이다. 이건 버그가 아니라 올바른 동작이다 — 추정값은 그 행동을 밀어내기에 충분할 만큼만 낮으면 되고, Thompson 샘플링이 0으로 붕괴하는 걸 막아 실제 선호가 바뀌면 되살아날 수 있게 한다.
+
+이것은 **명시된 사용자 모델 아래에서 메커니즘을 검증**한 것이지, 실제 사람이 이렇게 행동함을 증명한 것은 아니다. 그건 실제 사용과 실제 세션에 걸친 miss rate 하락만이 판정한다. 다만 여기서 수렴이 실패했다면 실제에서도 불가능했을 것이므로, 값싼 반증 시도는 통과했다.
 
 MIT.

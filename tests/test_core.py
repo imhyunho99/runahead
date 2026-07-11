@@ -251,6 +251,31 @@ class TestSchedulerRespectsBoundaries(unittest.TestCase):
             self.assertLessEqual(sum(len(c.results) for c in done), 1)
 
 
+class TestExecutorRobustness(unittest.TestCase):
+    def test_timeout_becomes_a_failed_result_not_a_crash(self):
+        """A hung agent kills its own branch, not the whole unattended run,
+        and still debits the budget for the wall clock it burned."""
+        import subprocess
+
+        from runahead.executor import ClaudeExecutor
+
+        def boom(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="claude", timeout=900)
+
+        orig = subprocess.run
+        subprocess.run = boom
+        try:
+            result = ClaudeExecutor(timeout=900).run(
+                Action(kind="write-tests", prompt="do it"), Path("/tmp")
+            )
+        finally:
+            subprocess.run = orig
+
+        self.assertFalse(result.ok)
+        self.assertGreater(result.tokens, 0)
+        self.assertIn("timed out", result.log)
+
+
 class TestWorktreeLocation(unittest.TestCase):
     """A coding agent handed a cwd inside .git edits nothing, returns success,
     and bills for the tokens. The empty patch is the only symptom. Keep

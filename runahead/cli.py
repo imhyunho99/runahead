@@ -24,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--minutes", type=float, default=30.0)
     run.add_argument("--actions", type=int, default=12)
     run.add_argument("--seed", type=int, default=None)
+    run.add_argument("--force", action="store_true", help="discard an unresolved queue and start over")
 
     sub.add_parser("queue", help="show what is waiting for review")
 
@@ -36,7 +37,20 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("stats", help="miss rate and learned confidences")
 
+    sim = sub.add_parser(
+        "simulate",
+        help="drive the learning loop against a synthetic user to check convergence",
+    )
+    sim.add_argument("--sessions", type=int, default=500)
+    sim.add_argument("--queue-size", type=int, default=2)
+    sim.add_argument("--seed", type=int, default=5)
+
     args = parser.parse_args(argv)
+
+    # simulate needs no repository -- it drives the learning loop in memory.
+    if args.command == "simulate":
+        return _simulate(args)
+
     repo = repo_root(Path.cwd())
     store = Store.open(repo)
 
@@ -56,6 +70,19 @@ def main(argv: list[str] | None = None) -> int:
 def _run(repo: Path, store: Store, args) -> int:
     if git(repo, "status", "--porcelain").strip():
         print("working tree is dirty; commit the finished task first", file=sys.stderr)
+        return 1
+
+    existing = Queue.load(repo)
+    if existing and existing.entries and not args.force:
+        # Overwriting an unresolved queue would drop patches the human never
+        # ruled on -- and, worse, never record the accept/reject labels, so the
+        # session's learning silently vanishes. Make them resolve or discard it.
+        print(
+            f"a queue from '{existing.task}' is still unresolved "
+            f"({len(existing.entries)} entries).\n"
+            "resolve it with `runahead accept`/`miss`, or re-run with --force to discard it.",
+            file=sys.stderr,
+        )
         return 1
 
     predictor = ClaudePredictor()
@@ -125,6 +152,40 @@ def _miss(repo: Path, store: Store, args) -> int:
     store.record_miss(task_kind, args.requested)
     store.flush()
     print("recorded. this is the signal that actually moves the predictor.")
+    return 0
+
+
+def _simulate(args) -> int:
+    import tempfile
+
+    from .simulate import render, simulate
+
+    # Two reliably-wanted actions and four medium distractors, into a queue that
+    # holds two. Early exploration keeps bumping a wanted action for a
+    # distractor -- a miss -- until the posteriors sharpen and the two wanted
+    # actions own both slots. This is the convergence claim, made falsifiable.
+    prefs = {
+        "write-tests": 0.90,
+        "draft-commit": 0.85,
+        "add-edge-cases": 0.48,
+        "error-handling": 0.45,
+        "update-docs": 0.40,
+        "perf-pass": 0.35,
+    }
+    with tempfile.TemporaryDirectory() as home:
+        result = simulate(
+            prefs,
+            sessions=args.sessions,
+            queue_size=args.queue_size,
+            home=Path(home),
+            seed=args.seed,
+        )
+    print(render(result))
+    print()
+    print(
+        "this validates the mechanism under a stated user model, not real humans. "
+        "only real use settles that."
+    )
     return 0
 
 

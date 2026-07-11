@@ -21,6 +21,10 @@ from .safety import assert_reversible
 from .worktree import capture_patch
 
 
+TOKENS_PER_TIMEOUT_SECOND = 40
+"""Rough charge for a timed-out call, so a hung branch still debits the budget."""
+
+
 class Executor(Protocol):
     def run(self, action: Action, work: Path) -> Result: ...
 
@@ -35,21 +39,35 @@ class ClaudeExecutor:
     def run(self, action: Action, work: Path) -> Result:
         assert_reversible(action.kind, action.prompt)
 
-        proc = subprocess.run(
-            [
-                self.binary,
-                "-p",
-                action.prompt,
-                "--output-format",
-                "json",
-                "--permission-mode",
-                "acceptEdits",
-            ],
-            cwd=str(work),
-            capture_output=True,
-            text=True,
-            timeout=self.timeout,
-        )
+        try:
+            proc = subprocess.run(
+                [
+                    self.binary,
+                    "-p",
+                    action.prompt,
+                    "--output-format",
+                    "json",
+                    "--permission-mode",
+                    "acceptEdits",
+                ],
+                cwd=str(work),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            # A hung agent is a dead branch, not a dead run. Nobody is watching;
+            # the other speculations must keep going. It is charged its full
+            # timeout so the budget accounts for the wall clock it burned.
+            return Result(
+                action=action,
+                ok=False,
+                tokens=int(self.timeout * TOKENS_PER_TIMEOUT_SECOND),
+                log=f"timed out after {self.timeout:.0f}s",
+            )
+        except (OSError, ValueError) as exc:
+            return Result(action=action, ok=False, log=str(exc)[:2000])
+
         if proc.returncode != 0:
             return Result(action=action, ok=False, log=proc.stderr.strip()[:2000])
 
