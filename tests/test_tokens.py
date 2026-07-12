@@ -62,6 +62,73 @@ class TestQueueTokens(unittest.TestCase):
         self.assertIn("spent while you were away", text)
 
 
+class TestUsageParsing(unittest.TestCase):
+    """The bug real dogfooding surfaced: the top-level `usage` object is the
+    last turn only, so reading input+output from it under-reports a multi-turn
+    agent by an order of magnitude. The cumulative truth is in `modelUsage`."""
+
+    def _stdout(self, payload: dict) -> str:
+        import json
+
+        return json.dumps(payload)
+
+    def test_reads_cumulative_model_usage_not_last_turn(self):
+        from runahead.executor import _usage_from
+
+        # Last turn shows tiny usage; the real total lives in modelUsage.
+        payload = {
+            "usage": {"input_tokens": 3, "output_tokens": 3347, "cache_read_input_tokens": 80534},
+            "modelUsage": {
+                "claude-opus-4-8[1m]": {
+                    "inputTokens": 47,
+                    "outputTokens": 20861,
+                    "cacheCreationInputTokens": 117141,
+                    "cacheReadInputTokens": 511900,
+                    "costUSD": 1.6126775,
+                }
+            },
+            "total_cost_usd": 1.6126775,
+        }
+        tokens, cost = _usage_from(self._stdout(payload))
+        self.assertEqual(tokens, 47 + 20861 + 117141 + 511900)  # 649,949
+        self.assertAlmostEqual(cost, 1.6126775, places=4)
+
+    def test_the_old_buggy_reading_would_have_been_an_order_of_magnitude_low(self):
+        from runahead.executor import _usage_from
+
+        payload = {
+            "usage": {"input_tokens": 3, "output_tokens": 3347, "cache_read_input_tokens": 80534},
+            "modelUsage": {"m": {"inputTokens": 47, "outputTokens": 20861,
+                                 "cacheCreationInputTokens": 117141, "cacheReadInputTokens": 511900}},
+        }
+        tokens, _ = _usage_from(self._stdout(payload))
+        old_buggy = 3 + 3347  # what the previous code counted
+        self.assertGreater(tokens, old_buggy * 100)
+
+    def test_falls_back_to_summing_all_components_of_top_level_usage(self):
+        from runahead.executor import _usage_from
+
+        payload = {
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "cache_creation_input_tokens": 300,
+                "cache_read_input_tokens": 400,
+            },
+            "total_cost_usd": 0.05,
+        }
+        tokens, cost = _usage_from(self._stdout(payload))
+        self.assertEqual(tokens, 1000)
+        self.assertAlmostEqual(cost, 0.05)
+
+    def test_garbage_stdout_still_returns_a_positive_estimate(self):
+        from runahead.executor import _usage_from
+
+        tokens, cost = _usage_from("not json at all, just some text output")
+        self.assertGreater(tokens, 0)
+        self.assertEqual(cost, 0.0)
+
+
 class TestTokenLedger(unittest.TestCase):
     def test_records_calls_and_totals_per_action(self):
         with tempfile.TemporaryDirectory() as home:

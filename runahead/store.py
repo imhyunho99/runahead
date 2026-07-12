@@ -97,21 +97,26 @@ class Store:
             entry = raw.setdefault(_key(task_kind, action_kind), {"accepted": 0, "rejected": 0})
             entry["accepted" if accepted else "rejected"] += 1
 
-    def record_tokens(self, task_kind: str, action_kind: str, tokens: int) -> None:
+    def record_tokens(self, task_kind: str, action_kind: str, tokens: int, cost_usd: float = 0.0) -> None:
         """Charge an agent's spend to its action kind.
 
         Spend is per-agent and happens at run time, accepted or not -- so this
         is recorded when the action runs, independent of the accept/reject
         label. It answers 'which speculations are worth what they cost me'.
+
+        Tokens and cost are tracked separately because they do not track each
+        other: cache reads dominate the token count but cost almost nothing, so
+        a report that shows only one hides half the picture.
         """
         entry = self._tokens.setdefault(
-            _key(task_kind, action_kind), {"calls": 0, "tokens": 0}
+            _key(task_kind, action_kind), {"calls": 0, "tokens": 0, "cost_usd": 0.0}
         )
         entry["calls"] += 1
         entry["tokens"] += int(tokens)
+        entry["cost_usd"] = entry.get("cost_usd", 0.0) + float(cost_usd)
 
     def token_ledger(self) -> dict[str, dict]:
-        """{ 'task|action': {calls, tokens, avg} } across the store's lifetime."""
+        """{ 'task|action': {calls, tokens, avg, cost_usd} } over the store's life."""
         out: dict[str, dict] = {}
         for key, entry in self._tokens.items():
             calls = entry.get("calls", 0) or 0
@@ -120,6 +125,7 @@ class Store:
                 "calls": calls,
                 "tokens": tokens,
                 "avg": (tokens / calls) if calls else 0.0,
+                "cost_usd": entry.get("cost_usd", 0.0) or 0.0,
             }
         return out
 

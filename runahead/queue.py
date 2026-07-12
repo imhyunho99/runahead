@@ -26,6 +26,7 @@ class Step:
     patch: str
     files: list[str] = field(default_factory=list)
     tokens: int = 0
+    cost_usd: float = 0.0
 
 
 @dataclass
@@ -49,6 +50,10 @@ class Entry:
         also the bill."""
         return sum(s.tokens for s in self.steps)
 
+    @property
+    def cost_usd(self) -> float:
+        return sum(s.cost_usd for s in self.steps)
+
 
 @dataclass
 class Queue:
@@ -67,6 +72,7 @@ class Queue:
                     patch=r.patch or "",
                     files=r.files(),
                     tokens=r.tokens,
+                    cost_usd=r.cost_usd,
                 )
                 for r in chain.results
             ]
@@ -108,6 +114,7 @@ class Queue:
                             "patch": s.patch,
                             "files": s.files,
                             "tokens": s.tokens,
+                            "cost_usd": s.cost_usd,
                         }
                         for s in e.steps
                     ],
@@ -164,7 +171,11 @@ class Queue:
             lines.append("")
 
         spent = sum(e.tokens for e in self.entries)
-        lines.append(f"spent while you were away: {spent:,} tokens across {len(self.entries)} agents")
+        cost = sum(e.cost_usd for e in self.entries)
+        cost_str = f" (${cost:.2f})" if cost else ""
+        lines.append(
+            f"spent while you were away: {spent:,} tokens{cost_str} across {len(self.entries)} agents"
+        )
         lines.append("stopped at the reversibility boundary: push, pr, deploy")
         if budget_summary:
             lines.append(f"budget: {budget_summary}")

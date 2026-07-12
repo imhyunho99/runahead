@@ -28,6 +28,7 @@ class Result:
     action: Action
     patch: str | None = None
     tokens: int = 0
+    cost_usd: float = 0.0
     ok: bool = True
     log: str = ""
 

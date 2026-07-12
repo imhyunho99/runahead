@@ -26,7 +26,10 @@ from .worktree import git, worktree
 
 MAX_DEPTH_PREDICTED = 1
 MAX_DEPTH_FIXED = 3
-ESTIMATED_TOKENS_PER_ACTION = 15_000
+ESTIMATED_TOKENS_PER_ACTION = 250_000
+"""A real agent reading a real repo spends most of its tokens on cache reads
+across many turns -- hundreds of thousands per action, not the fake executor's
+fictional thousand. can_afford() must estimate against reality or it overshoots."""
 
 
 @dataclass
