@@ -83,6 +83,7 @@ A budget (tokens, wall clock, action count) bounds the reversible work too. Nobo
   priors.json        global Beta counters
   repos/<id>.json    per-repo counters, seeded from the global prior
   history.jsonl      accepts, rejects, misses, conflicts
+  tokens.json        per-(task kind, action kind) call and token ledger
 
 ~/.cache/runahead/   where speculation actually runs
   worktrees/<repo>/<action>
@@ -92,6 +93,8 @@ A budget (tokens, wall clock, action count) bounds the reversible work too. Nobo
 ```
 
 Learning data stays out of the repo on purpose. Commit it and your habits average with your teammates', and an averaged habit predicts nobody.
+
+`tokens.json` is the persistent token ledger. Every action is one agent invocation, and its spend is charged to its `(task kind, action kind)` at run time — independent of whether you later accept or reject it, because the tokens were burned either way. That is what lets `stats` answer *which speculations are worth what they cost me* over the whole history, not just this run.
 
 Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens — the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
 
@@ -123,6 +126,22 @@ runahead miss "write a migration for the new column"
 runahead stats
 ```
 
+`stats` reads the persistent ledger at `~/.runahead/tokens.json` and pairs each `(task kind, action kind)` posterior with what it has cost you, then closes with the grand total across every speculation ever run:
+
+```
+miss rate: 8%
+
+  action                                  p    sd    n   avg tok   total tok
+  feature|write-tests                  0.98  0.04   42    10,400     436,800
+  feature|add-edge-cases               0.71  0.09   31    12,340     382,540
+  feature|error-handling               0.44  0.11   18     9,950     179,100
+  feature|responsive-ui                0.31  0.18    4    20,560      82,240
+
+  total spent across all speculation: 1,080,680 tokens
+```
+
+The token columns come from the ledger, not the queue, so they persist across runs and count every agent invocation — the avg is what one more of that speculation will likely cost, and the total is what the habit has cost so far.
+
 To see the learning loop converge without spending a single token, run it against a synthetic user:
 
 ```bash
@@ -133,16 +152,33 @@ runahead simulate
 task (feature): add retry logic to the http client
 
 auto-accepted (graduated)
-  [x] write-tests        p=0.98 (n=42)  write-tests -> run-tests -> draft-commit
+  [x] write-tests           p=0.98 (n=42)   31,200 tok  write-tests -> run-tests -> draft-commit
 
 needs review
-  [ ] add-edge-cases     p=0.71 (n=31)  add-edge-cases
-  ( ) error-handling#1   p=0.44 (n=18)  error-handling
-  ( ) error-handling#2   p=0.44 (n=18)  error-handling
-  [ ] responsive-ui      p=0.31 (n=4)   responsive-ui
+  [ ] add-edge-cases        p=0.71 (n=31)   12,340 tok  add-edge-cases
+  ( ) error-handling#1      p=0.44 (n=18)    9,800 tok  error-handling
+  ( ) error-handling#2      p=0.44 (n=18)   10,100 tok  error-handling
+  [ ] responsive-ui         p=0.31 (n=4)    20,560 tok  responsive-ui
 
+spent while you were away: 84,000 tokens across 5 agents
 stopped at the reversibility boundary: push, pr, deploy
 budget: tokens 84,000/200,000 · 18m/30m · actions 6/12
+```
+
+Each chain carries its own token cost, and the total is spelled out because the review queue is also the bill — that spend already happened while you were away, whether or not you accept the line.
+
+`runahead run` also prints a per-agent breakdown right after the queue, so you can see which speculation ate the budget. Each row is one agent invocation — a chain contributes one row per step, so `write-tests -> run-tests -> draft-commit` shows up as three lines that sum to its chain total above:
+
+```
+tokens per agent:
+  responsive-ui                  20,560    24%
+  write-tests                    14,200    17%
+  add-edge-cases                 12,340    15%
+  draft-commit                   11,000    13%
+  error-handling#2               10,100    12%
+  error-handling#1                9,800    12%
+  run-tests                       6,000     7%
+  total                          84,000
 ```
 
 You answer per line. Rebase does the composing. You never see a combination matrix — that would multiply the cost this tool exists to divide.
@@ -283,12 +319,15 @@ runahead는 그 선을 넘지 않으며, **확신도는 이 잠금을 절대 풀
   priors.json       전역 Beta 카운터
   repos/<id>.json   레포별 카운터. 전역을 prior로 삼아 출발한다.
   history.jsonl     수락 / 거부 / miss / 충돌
+  tokens.json       (작업 유형, 행동 유형)별 호출·토큰 원장
 
 .git/runahead/      이 레포 것. 일회용.
   worktrees/  patches/  queue.json
 ```
 
 학습 데이터를 레포 밖에 두는 것은 의도다. 커밋하면 당신의 습관이 동료의 습관과 평균되고, **평균된 습관은 누구도 예측하지 못한다.**
+
+`tokens.json`은 영속 토큰 원장이다. 행동 하나가 곧 에이전트 호출 하나이고, 그 비용은 나중에 수락하든 거부하든 상관없이 **실행 시점에** 해당 `(작업 유형, 행동 유형)`에 청구된다 — 토큰은 어느 쪽이든 이미 태워졌기 때문이다. `stats`가 이번 실행뿐 아니라 전체 이력에 걸쳐 *어떤 투기가 비용만큼 값어치를 하는가*에 답할 수 있는 근거가 이것이다.
 
 ## 설치
 
@@ -317,6 +356,24 @@ runahead accept add-edge-cases error-handling
 runahead miss "새 컬럼 마이그레이션 작성"
 runahead stats
 ```
+
+`runahead run`은 큐 바로 뒤에 에이전트별 토큰 내역을 함께 찍는다. 각 체인은 자기 토큰 비용을 달고 나오고, 큐 아래에는 `spent while you were away` 총합이 적힌다 — 검토 큐가 곧 청구서이기 때문이다.
+
+`stats`는 `~/.runahead/tokens.json`의 영속 원장을 읽어 각 `(작업 유형, 행동 유형)` 사후분포에 그 비용을 붙이고, 마지막에 지금까지 돌린 모든 투기의 총합을 찍는다.
+
+```
+miss rate: 8%
+
+  action                                  p    sd    n   avg tok   total tok
+  feature|write-tests                  0.98  0.04   42    10,400     436,800
+  feature|add-edge-cases               0.71  0.09   31    12,340     382,540
+  feature|error-handling               0.44  0.11   18     9,950     179,100
+  feature|responsive-ui                0.31  0.18    4    20,560      82,240
+
+  total spent across all speculation: 1,080,680 tokens
+```
+
+토큰 컬럼은 큐가 아니라 원장에서 온다. 그래서 실행 사이에 남고 모든 에이전트 호출을 센다 — `avg tok`은 그 투기를 한 번 더 돌리면 들 비용, `total tok`은 그 습관이 지금까지 쓴 비용이다.
 
 토큰 한 개 안 쓰고 학습 루프가 수렴하는 걸 보려면 합성 사용자로 돌린다.
 
