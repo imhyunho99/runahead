@@ -106,10 +106,35 @@ def _run(repo: Path, store: Store, args) -> int:
         # success. Never let that pass silently.
         print(f"{barren} action(s) produced no patch", file=sys.stderr)
 
+    # Per-agent token accounting. Each action is one agent invocation; charge
+    # its spend to its kind so `stats` can show what each speculation costs
+    # over time. Recorded at run time, independent of accept/reject.
+    for chain in done:
+        for result in chain.results:
+            store.record_tokens(task_kind, result.action.kind, result.tokens)
+    store.flush()
+
     queue = Queue.build(args.task, task_kind, done)
     queue.save(repo)
     print(queue.render(budget.summary()))
+    print()
+    print(_token_report(done))
     return 0
+
+
+def _token_report(done) -> str:
+    rows = []
+    for chain in done:
+        for result in chain.results:
+            rows.append((result.tokens, result.action.id))
+    rows.sort(reverse=True)
+    total = sum(t for t, _ in rows)
+    lines = ["tokens per agent:"]
+    for tokens, agent_id in rows:
+        share = (tokens / total * 100) if total else 0.0
+        lines.append(f"  {agent_id:<28} {tokens:>8,}  {share:4.0f}%")
+    lines.append(f"  {'total':<28} {total:>8,}")
+    return "\n".join(lines)
 
 
 def _queue(repo: Path) -> int:
@@ -193,12 +218,26 @@ def _stats(store: Store) -> int:
     rate = store.miss_rate()
     print(f"miss rate: {'n/a' if rate is None else f'{rate:.0%}'}")
     print()
+
+    ledger = store.token_ledger()
     rows = []
     for task_kind, action_kind in store.known_pairs():
         posterior = store.posterior(task_kind, action_kind)
-        rows.append((posterior.mean, f"{task_kind}|{action_kind}", posterior))
-    for mean, key, posterior in sorted(rows, key=lambda r: r[0], reverse=True):
-        print(f"  {key:<36} p={mean:.2f}  sd={posterior.stdev:.2f}  n={int(posterior.observations)}")
+        cost = ledger.get(f"{task_kind}|{action_kind}", {})
+        rows.append((posterior.mean, f"{task_kind}|{action_kind}", posterior, cost))
+
+    print(f"  {'action':<36} {'p':>4}  {'sd':>4}  {'n':>3}  {'avg tok':>8}  {'total tok':>10}")
+    for mean, key, posterior, cost in sorted(rows, key=lambda r: r[0], reverse=True):
+        avg = f"{cost['avg']:,.0f}" if cost.get("calls") else "-"
+        total = f"{cost['tokens']:,}" if cost.get("calls") else "-"
+        print(
+            f"  {key:<36} {mean:>4.2f}  {posterior.stdev:>4.2f}  "
+            f"{int(posterior.observations):>3}  {avg:>8}  {total:>10}"
+        )
+
+    grand = sum(c["tokens"] for c in ledger.values())
+    if grand:
+        print(f"\n  total spent across all speculation: {grand:,} tokens")
     return 0
 
 

@@ -46,6 +46,7 @@ class Store:
     repo_id: str
     _global: dict = field(default_factory=dict)
     _repo: dict = field(default_factory=dict)
+    _tokens: dict = field(default_factory=dict)
 
     @classmethod
     def open(cls, repo_path: Path, root: Path | None = None) -> "Store":
@@ -54,6 +55,7 @@ class Store:
         store = cls(root=root, repo_id=repo_id)
         store._global = _read_json(store.global_path)
         store._repo = _read_json(store.repo_path)
+        store._tokens = _read_json(store.tokens_path)
         return store
 
     @property
@@ -63,6 +65,10 @@ class Store:
     @property
     def repo_path(self) -> Path:
         return self.root / "repos" / f"{self.repo_id}.json"
+
+    @property
+    def tokens_path(self) -> Path:
+        return self.root / "tokens.json"
 
     @property
     def history_path(self) -> Path:
@@ -90,6 +96,32 @@ class Store:
         for raw in (self._global, self._repo):
             entry = raw.setdefault(_key(task_kind, action_kind), {"accepted": 0, "rejected": 0})
             entry["accepted" if accepted else "rejected"] += 1
+
+    def record_tokens(self, task_kind: str, action_kind: str, tokens: int) -> None:
+        """Charge an agent's spend to its action kind.
+
+        Spend is per-agent and happens at run time, accepted or not -- so this
+        is recorded when the action runs, independent of the accept/reject
+        label. It answers 'which speculations are worth what they cost me'.
+        """
+        entry = self._tokens.setdefault(
+            _key(task_kind, action_kind), {"calls": 0, "tokens": 0}
+        )
+        entry["calls"] += 1
+        entry["tokens"] += int(tokens)
+
+    def token_ledger(self) -> dict[str, dict]:
+        """{ 'task|action': {calls, tokens, avg} } across the store's lifetime."""
+        out: dict[str, dict] = {}
+        for key, entry in self._tokens.items():
+            calls = entry.get("calls", 0) or 0
+            tokens = entry.get("tokens", 0) or 0
+            out[key] = {
+                "calls": calls,
+                "tokens": tokens,
+                "avg": (tokens / calls) if calls else 0.0,
+            }
+        return out
 
     def record_miss(self, task_kind: str, requested: str) -> None:
         """The human ignored the queue entirely and asked for something else.
@@ -139,6 +171,7 @@ class Store:
     def flush(self) -> None:
         _write_json(self.global_path, self._global)
         _write_json(self.repo_path, self._repo)
+        _write_json(self.tokens_path, self._tokens)
 
 
 def _read_json(path: Path) -> dict:

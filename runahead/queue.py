@@ -25,6 +25,7 @@ class Step:
     kind: str
     patch: str
     files: list[str] = field(default_factory=list)
+    tokens: int = 0
 
 
 @dataclass
@@ -40,6 +41,14 @@ class Entry:
     def kinds(self) -> list[str]:
         return [s.kind for s in self.steps]
 
+    @property
+    def tokens(self) -> int:
+        """What this chain of agents cost, whether or not you accept it.
+
+        The spend already happened while you were away -- the review queue is
+        also the bill."""
+        return sum(s.tokens for s in self.steps)
+
 
 @dataclass
 class Queue:
@@ -52,7 +61,13 @@ class Queue:
         entries = []
         for chain in chains:
             steps = [
-                Step(id=r.action.id, kind=r.action.kind, patch=r.patch or "", files=r.files())
+                Step(
+                    id=r.action.id,
+                    kind=r.action.kind,
+                    patch=r.patch or "",
+                    files=r.files(),
+                    tokens=r.tokens,
+                )
                 for r in chain.results
             ]
             if not steps:
@@ -87,7 +102,13 @@ class Queue:
                     "mean": e.mean,
                     "observations": e.observations,
                     "steps": [
-                        {"id": s.id, "kind": s.kind, "patch": s.patch, "files": s.files}
+                        {
+                            "id": s.id,
+                            "kind": s.kind,
+                            "patch": s.patch,
+                            "files": s.files,
+                            "tokens": s.tokens,
+                        }
                         for s in e.steps
                     ],
                 }
@@ -142,6 +163,8 @@ class Queue:
                     lines.append(f"  {marker} {_label(e)}")
             lines.append("")
 
+        spent = sum(e.tokens for e in self.entries)
+        lines.append(f"spent while you were away: {spent:,} tokens across {len(self.entries)} agents")
         lines.append("stopped at the reversibility boundary: push, pr, deploy")
         if budget_summary:
             lines.append(f"budget: {budget_summary}")
@@ -151,7 +174,11 @@ class Queue:
 def _label(entry: Entry) -> str:
     chain = " -> ".join(entry.kinds)
     n = int(entry.observations)
-    return f"{entry.id:<24} p={entry.mean:.2f} (n={n})  {chain}"
+    # tokens: what this speculation actually cost, per agent chain.
+    return (
+        f"{entry.id:<24} p={entry.mean:.2f} (n={n})  "
+        f"{entry.tokens:>7,} tok  {chain}"
+    )
 
 
 # -- acceptance ------------------------------------------------------------
