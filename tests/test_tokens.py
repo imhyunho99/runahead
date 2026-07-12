@@ -3,6 +3,7 @@ the queue, and accumulated per action kind across sessions."""
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -92,6 +93,58 @@ class TestTokenLedger(unittest.TestCase):
             store.record("feature", "perf-pass", accepted=False)  # but rejected
             self.assertEqual(store.token_ledger()["feature|perf-pass"]["tokens"], 5000)
             self.assertLess(store.posterior("feature", "perf-pass").mean, 0.5)
+
+
+class TestLedgerResilience(unittest.TestCase):
+    """A corrupt or half-written tokens.json must never crash `stats`/`run`."""
+
+    def _store_over(self, home: str, tokens_contents: str) -> Store:
+        (Path(home) / "tokens.json").write_text(tokens_contents, encoding="utf-8")
+        return Store.open(Path("/repo/x"), root=Path(home))
+
+    def test_invalid_json_degrades_to_empty_ledger(self):
+        with tempfile.TemporaryDirectory() as home:
+            store = self._store_over(home, "{ this is not json ")
+            self.assertEqual(store.token_ledger(), {})
+
+    def test_truncated_json_degrades_to_empty_ledger(self):
+        # The shape an interrupted writer leaves behind: a valid prefix.
+        with tempfile.TemporaryDirectory() as home:
+            store = self._store_over(home, '{"feature|write-tests": {"calls": 2, "tok')
+            self.assertEqual(store.token_ledger(), {})
+
+    def test_whitespace_only_file_degrades_to_empty_ledger(self):
+        with tempfile.TemporaryDirectory() as home:
+            store = self._store_over(home, "   \n  ")
+            self.assertEqual(store.token_ledger(), {})
+
+    def test_non_object_json_degrades_to_empty_ledger(self):
+        with tempfile.TemporaryDirectory() as home:
+            store = self._store_over(home, "[1, 2, 3]")
+            self.assertEqual(store.token_ledger(), {})
+
+    def test_corrupt_ledger_still_records_and_reflushes_cleanly(self):
+        with tempfile.TemporaryDirectory() as home:
+            store = self._store_over(home, "{ broken")
+            store.record_tokens("feature", "write-tests", 900)
+            store.flush()
+
+            reopened = Store.open(Path("/repo/x"), root=Path(home))
+            self.assertEqual(
+                reopened.token_ledger()["feature|write-tests"]["tokens"], 900
+            )
+
+    def test_flush_is_atomic_and_leaves_no_temp_files(self):
+        with tempfile.TemporaryDirectory() as home:
+            store = Store.open(Path("/repo/x"), root=Path(home))
+            store.record_tokens("feature", "write-tests", 1234)
+            store.flush()
+
+            root = Path(home)
+            self.assertEqual(list(root.glob("*.tmp")), [])
+            # The persisted file parses on its own -- no torn write survived.
+            reloaded = json.loads((root / "tokens.json").read_text(encoding="utf-8"))
+            self.assertEqual(reloaded["feature|write-tests"]["tokens"], 1234)
 
 
 if __name__ == "__main__":

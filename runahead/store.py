@@ -175,13 +175,41 @@ class Store:
 
 
 def _read_json(path: Path) -> dict:
-    if not path.exists():
+    """Load a JSON object, degrading to {} on anything unreadable.
+
+    A missing, empty, whitespace-only, truncated, or hand-mangled file must
+    never crash the caller -- losing corrupt history is acceptable, aborting
+    `stats` or `run` is not. A non-object payload (list, scalar, null) is
+    treated as corrupt for the same reason: the counters that consume it
+    assume a dict. The exists() check is skipped deliberately so a file
+    deleted between check and read just falls through to {}.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
         return {}
-    return json.loads(path.read_text(encoding="utf-8") or "{}")
+    try:
+        data = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _write_json(path: Path, data: dict) -> None:
+    """Persist JSON atomically: fully materialise a temp file, fsync it, then
+    rename it over the target. rename(2) is atomic, so a crash mid-write leaves
+    a reader with either the old complete file or the new one -- never a torn
+    file that fails to parse on reload. A per-pid temp name keeps concurrent
+    writers from clobbering each other's scratch file.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
+    payload = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
