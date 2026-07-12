@@ -19,7 +19,12 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="speculate on what comes after the task you just finished")
-    run.add_argument("task", help="what was just implemented")
+    run.add_argument(
+        "task",
+        nargs="?",
+        default=None,
+        help="what was just implemented (default: the last commit's message)",
+    )
     run.add_argument("--tokens", type=int, default=200_000)
     run.add_argument("--minutes", type=float, default=30.0)
     run.add_argument("--actions", type=int, default=12)
@@ -84,6 +89,15 @@ def _run(repo: Path, store: Store, args) -> int:
             file=sys.stderr,
         )
         return 1
+
+    # "The task you just finished" is, by default, your last commit -- so
+    # `runahead run` with no argument just works in a clean repo.
+    task = args.task or git(repo, "log", "-1", "--pretty=%s").strip()
+    if not task:
+        print("no task given and no commit to infer one from", file=sys.stderr)
+        return 1
+    args.task = task
+    print(f"speculating after: {task}", file=sys.stderr)
 
     predictor = ClaudePredictor()
     task_kind = predictor.classify(args.task)
