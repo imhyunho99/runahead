@@ -150,7 +150,7 @@ def _speculate(repo: Path, store: Store, args, budget: Budget, executor=None):
 
     print(f"{repo.name}: speculating on {len(chains)} chains ({task_kind})", file=sys.stderr)
     actions_before = budget.actions_used
-    done = execute(repo, ClaudeExecutor(), chains, budget)
+    done = execute(repo, executor or ClaudeExecutor(), chains, budget)
 
     # Per repo, since the budget's action counter is shared across the workspace.
     barren = (budget.actions_used - actions_before) - sum(len(c.results) for c in done)

@@ -124,7 +124,9 @@ class _Args:
     task = None
     tokens = 10**9
     minutes = 10**6
-    actions = 6
+    # Enough actions for the shared, newest-first workspace budget to reach
+    # both repos -- each repo plans up to 6 chains, so 6 would starve the second.
+    actions = 12
     seed = 1
     force = False
     within = 14.0
