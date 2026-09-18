@@ -4,7 +4,7 @@ Speculative parallel execution for coding agents.
 
 A coding agent finishes a task and stops to ask what's next. You aren't there. Nothing happens until you come back and answer. `runahead` guesses the answers, runs them in isolated worktrees while you're away, and hands you a queue to pick from.
 
-[Design doc (Korean)](docs/specs/2026-07-10-runahead-design.md)
+**English** · [한국어](#runahead-한국어)
 
 ---
 
@@ -20,83 +20,6 @@ A coding agent finishes a task and stops to ask what's next. You aren't there. N
 | irreversible actions | possible | structurally impossible |
 
 Bypass mode trades control for autonomy. runahead keeps both: the decision still belongs to you, it just happens after the work instead of before it.
-
-## How it works
-
-Speculation is not branch prediction. Nothing in the machine resolves the branch — a slow oracle does, and the oracle is you. So this is run-ahead execution, and its value scales with how long you're away, not with how fast the agent is.
-
-Each guess is an **action**: one prompt, one isolated worktree, one patch. Actions are the unit of storage, acceptance, and learning. That is why a rebase conflict can kill one of them without touching the rest.
-
-Actions fall into two lanes:
-
-- **Fixed lane** — orthogonal work (tests, lint, commit draft). Independent checkboxes. Accepting all of them is the default, so it costs you nothing to review.
-- **Predicted lane** — competing work (edge cases, error handling, UI). Radio buttons. You have to read and choose.
-
-The whole thing rests on one constraint:
-
-> **Reviewing N results must cost less than doing one yourself.**
-
-Otherwise runahead hasn't removed work, it has multiplied it. Every design decision below follows from that.
-
-## What it learns
-
-One Beta counter per `(task kind, action kind)`. That's it — no fine-tuning, no embeddings, no vector database. A session yields three to five labels; there is no gradient to see.
-
-```
-feature|write-tests      alpha=47 beta=6    p=0.87
-feature|add-edge-cases   alpha=12 beta=19   p=0.39
-feature|responsive-ui    alpha=2  beta=1    p=0.67  <- three tries. not trusted.
-```
-
-Confidence `p` turns three dials at once: how many competing variants to generate, whether the action earns children, and whether it can be auto-accepted. Auto-accept requires a high mean **and** a tight posterior — 2 of 3 successes has a mean of 0.67 and tells you nothing.
-
-Three consequences fall out of using Beta rather than a ratio:
-
-**Exploration is built in.** Candidates are ranked by sampling from the posterior (Thompson sampling), not by its mean. Without this, the system dies of exposure bias: it proposes A, you accept the A in front of you, the statistics tilt toward A, and B — which you actually wanted — never appears on screen to be chosen. A wide posterior occasionally draws high, and that is the only way the truth gets a chance to surface. There is a regression test for exactly this.
-
-**Graduation and demotion are free.** As `p` rises an action stops being offered as one of three and starts being applied silently. As `p` falls it drops back. Your personal `/ship` grows on its own instead of being written by hand — that is the actual delta over a fixed post-task script.
-
-**The queue gets shorter, not deeper.** Reversibility caps depth long before confidence does. What improves with learning is that you're asked less.
-
-Priors are hierarchical: a global habit seeds each new repo, so cold start happens once rather than once per repository.
-
-### The signal that matters
-
-Accept rate is measured only over what the system chose to show you. It climbs as the system narrows onto its own habits, which looks like learning and isn't.
-
-**Miss rate** — how often you ignored the queue entirely and asked for something else — cannot be gamed that way. It names the actions the predictor failed to imagine. Depth is gated on it.
-
-Rebase conflicts are the third label. Two actions believed orthogonal whose patches don't compose is not a bug; it's `do not propose this pair together again`.
-
-## The boundary
-
-Speculation is justified exactly where rollback is free. Inside a worktree it is. `git push` is not, nor is a deploy, a migration, or an outbound POST.
-
-runahead never crosses that line, and confidence never unlocks it. At `p = 0.99` it still does not push. The boundary is drawn by the machine, not by checkpoints you place by hand — otherwise you couldn't walk away, which was the entire point.
-
-A budget (tokens, wall clock, action count) bounds the reversible work too. Nobody is watching for thirty minutes; without a ceiling the predicted lane will happily inflate itself.
-
-## Storage
-
-```
-~/.runahead/         yours. permanent. never committed, never uploaded.
-  priors.json        global Beta counters
-  repos/<id>.json    per-repo counters, seeded from the global prior
-  history.jsonl      accepts, rejects, misses, conflicts
-  tokens.json        per-(task kind, action kind) call and token ledger
-
-~/.cache/runahead/   where speculation actually runs
-  worktrees/<repo>/<action>
-
-.git/runahead/       this repo's. disposable.
-  patches/  queue.json
-```
-
-Learning data stays out of the repo on purpose. Commit it and your habits average with your teammates', and an averaged habit predicts nobody.
-
-`tokens.json` is the persistent token ledger. Every action is one agent invocation, and its spend is charged to its `(task kind, action kind)` at run time — independent of whether you later accept or reject it, because the tokens were burned either way. That is what lets `stats` answer *which speculations are worth what they cost me* over the whole history, not just this run.
-
-Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens — the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
 
 ## Install
 
@@ -183,6 +106,83 @@ tokens per agent:
 
 You answer per line. Rebase does the composing. You never see a combination matrix — that would multiply the cost this tool exists to divide.
 
+## How it works
+
+Speculation is not branch prediction. Nothing in the machine resolves the branch — a slow oracle does, and the oracle is you. So this is run-ahead execution, and its value scales with how long you're away, not with how fast the agent is.
+
+Each guess is an **action**: one prompt, one isolated worktree, one patch. Actions are the unit of storage, acceptance, and learning. That is why a rebase conflict can kill one of them without touching the rest.
+
+Actions fall into two lanes:
+
+- **Fixed lane** — orthogonal work (tests, lint, commit draft). Independent checkboxes. Accepting all of them is the default, so it costs you nothing to review.
+- **Predicted lane** — competing work (edge cases, error handling, UI). Radio buttons. You have to read and choose.
+
+The whole thing rests on one constraint:
+
+> **Reviewing N results must cost less than doing one yourself.**
+
+Otherwise runahead hasn't removed work, it has multiplied it. Every design decision below follows from that.
+
+## What it learns
+
+One Beta counter per `(task kind, action kind)`. That's it — no fine-tuning, no embeddings, no vector database. A session yields three to five labels; there is no gradient to see.
+
+```
+feature|write-tests      alpha=47 beta=6    p=0.87
+feature|add-edge-cases   alpha=12 beta=19   p=0.39
+feature|responsive-ui    alpha=2  beta=1    p=0.67  <- three tries. not trusted.
+```
+
+Confidence `p` turns three dials at once: how many competing variants to generate, whether the action earns children, and whether it can be auto-accepted. Auto-accept requires a high mean **and** a tight posterior — 2 of 3 successes has a mean of 0.67 and tells you nothing.
+
+Three consequences fall out of using Beta rather than a ratio:
+
+**Exploration is built in.** Candidates are ranked by sampling from the posterior (Thompson sampling), not by its mean. Without this, the system dies of exposure bias: it proposes A, you accept the A in front of you, the statistics tilt toward A, and B — which you actually wanted — never appears on screen to be chosen. A wide posterior occasionally draws high, and that is the only way the truth gets a chance to surface. There is a regression test for exactly this.
+
+**Graduation and demotion are free.** As `p` rises an action stops being offered as one of three and starts being applied silently. As `p` falls it drops back. Your personal `/ship` grows on its own instead of being written by hand — that is the actual delta over a fixed post-task script.
+
+**The queue gets shorter, not deeper.** Reversibility caps depth long before confidence does. What improves with learning is that you're asked less.
+
+Priors are hierarchical: a global habit seeds each new repo, so cold start happens once rather than once per repository.
+
+### The signal that matters
+
+Accept rate is measured only over what the system chose to show you. It climbs as the system narrows onto its own habits, which looks like learning and isn't.
+
+**Miss rate** — how often you ignored the queue entirely and asked for something else — cannot be gamed that way. It names the actions the predictor failed to imagine. Depth is gated on it.
+
+Rebase conflicts are the third label. Two actions believed orthogonal whose patches don't compose is not a bug; it's `do not propose this pair together again`.
+
+## The boundary
+
+Speculation is justified exactly where rollback is free. Inside a worktree it is. `git push` is not, nor is a deploy, a migration, or an outbound POST.
+
+runahead never crosses that line, and confidence never unlocks it. At `p = 0.99` it still does not push. The boundary is drawn by the machine, not by checkpoints you place by hand — otherwise you couldn't walk away, which was the entire point.
+
+A budget (tokens, wall clock, action count) bounds the reversible work too. Nobody is watching for thirty minutes; without a ceiling the predicted lane will happily inflate itself.
+
+## Storage
+
+```
+~/.runahead/         yours. permanent. never committed, never uploaded.
+  priors.json        global Beta counters
+  repos/<id>.json    per-repo counters, seeded from the global prior
+  history.jsonl      accepts, rejects, misses, conflicts
+  tokens.json        per-(task kind, action kind) call and token ledger
+
+~/.cache/runahead/   where speculation actually runs
+  worktrees/<repo>/<action>
+
+.git/runahead/       this repo's. disposable.
+  patches/  queue.json
+```
+
+Learning data stays out of the repo on purpose. Commit it and your habits average with your teammates', and an averaged habit predicts nobody.
+
+`tokens.json` is the persistent token ledger. Every action is one agent invocation, and its spend is charged to its `(task kind, action kind)` at run time — independent of whether you later accept or reject it, because the tokens were burned either way. That is what lets `stats` answer *which speculations are worth what they cost me* over the whole history, not just this run.
+
+Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens — the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
+
 ## Agents
 
 The core knows nothing about Claude. One seam:
@@ -236,6 +236,12 @@ MIT.
 ---
 ---
 
+## Docs
+
+[Design doc (Korean)](docs/specs/2026-07-10-runahead-design.md)
+
+---
+
 # runahead (한국어)
 
 코딩 에이전트를 위한 투기적 병렬 실행.
@@ -243,6 +249,10 @@ MIT.
 에이전트는 작업을 끝내면 멈춰서 묻는다. "다음에 뭘 할까요?" 당신은 자리에 없다. 돌아와 답할 때까지 아무 일도 일어나지 않는다. `runahead`는 그 답을 미리 추측해서, 자리를 비운 동안 격리된 worktree에서 실행해두고, 돌아온 당신에게 고를 큐를 내민다.
 
 [설계 문서](docs/specs/2026-07-10-runahead-design.md)
+
+[English](#runahead) · **한국어**
+
+---
 
 ## 바이패스 모드와 무엇이 다른가
 
@@ -256,6 +266,60 @@ MIT.
 | 비가역 행동 | 가능함 | 구조적으로 불가능 |
 
 바이패스 모드는 통제권을 팔아 자율성을 산다. runahead는 둘 다 가진다. 결정권은 여전히 당신 것이고, 다만 작업 **이전**이 아니라 **이후**에 행사될 뿐이다.
+
+## 설치
+
+Python 3.10+, git, 그리고 `PATH` 위의 코딩 에이전트 CLI. 의존성 없음.
+
+```bash
+git clone https://github.com/imhyunho99/runahead
+cd runahead && pip install -e .
+```
+
+## 사용
+
+방금 끝낸 작업을 커밋하고, 자리를 뜬다.
+
+```bash
+runahead run "http 클라이언트에 재시도 로직 추가"
+
+# 돌아와서
+runahead queue
+runahead accept add-edge-cases error-handling
+```
+
+큐에 원하는 게 하나도 없었다면 그렇게 말하라. **당신이 줄 수 있는 가장 값진 정보다.**
+
+```bash
+runahead miss "새 컬럼 마이그레이션 작성"
+runahead stats
+```
+
+`runahead run`은 큐 바로 뒤에 에이전트별 토큰 내역을 함께 찍는다. 각 체인은 자기 토큰 비용을 달고 나오고, 큐 아래에는 `spent while you were away` 총합이 적힌다 — 검토 큐가 곧 청구서이기 때문이다.
+
+`stats`는 `~/.runahead/tokens.json`의 영속 원장을 읽어 각 `(작업 유형, 행동 유형)` 사후분포에 그 비용을 붙이고, 마지막에 지금까지 돌린 모든 투기의 총합을 찍는다.
+
+```
+miss rate: 8%
+
+  action                                  p    sd    n   avg tok   total tok
+  feature|write-tests                  0.98  0.04   42    10,400     436,800
+  feature|add-edge-cases               0.71  0.09   31    12,340     382,540
+  feature|error-handling               0.44  0.11   18     9,950     179,100
+  feature|responsive-ui                0.31  0.18    4    20,560      82,240
+
+  total spent across all speculation: 1,080,680 tokens
+```
+
+토큰 컬럼은 큐가 아니라 원장에서 온다. 그래서 실행 사이에 남고 모든 에이전트 호출을 센다 — `avg tok`은 그 투기를 한 번 더 돌리면 들 비용, `total tok`은 그 습관이 지금까지 쓴 비용이다.
+
+토큰 한 개 안 쓰고 학습 루프가 수렴하는 걸 보려면 합성 사용자로 돌린다.
+
+```bash
+runahead simulate
+```
+
+당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 — 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
 
 ## 어떻게 동작하는가
 
@@ -333,60 +397,6 @@ runahead는 그 선을 넘지 않으며, **확신도는 이 잠금을 절대 풀
 `tokens.json`은 영속 토큰 원장이다. 행동 하나가 곧 에이전트 호출 하나이고, 그 비용은 나중에 수락하든 거부하든 상관없이 **실행 시점에** 해당 `(작업 유형, 행동 유형)`에 청구된다 — 토큰은 어느 쪽이든 이미 태워졌기 때문이다. `stats`가 이번 실행뿐 아니라 전체 이력에 걸쳐 *어떤 투기가 비용만큼 값어치를 하는가*에 답할 수 있는 근거가 이것이다.
 
 worktree를 레포 밖에 두는 것도 하중을 받는 결정이다. 코딩 에이전트에게 `.git` 안의 cwd를 주면 아무것도 편집하지 않고 성공을 반환하며 토큰만 청구한다 — 빈 패치가 유일한 증상이다. 반대로 작업 트리 안에 두면 `git status`가 더러워지는데, 그건 정확히 `accept`가 실행을 거부하는 조건이다.
-
-## 설치
-
-Python 3.10+, git, 그리고 `PATH` 위의 코딩 에이전트 CLI. 의존성 없음.
-
-```bash
-git clone https://github.com/imhyunho99/runahead
-cd runahead && pip install -e .
-```
-
-## 사용
-
-방금 끝낸 작업을 커밋하고, 자리를 뜬다.
-
-```bash
-runahead run "http 클라이언트에 재시도 로직 추가"
-
-# 돌아와서
-runahead queue
-runahead accept add-edge-cases error-handling
-```
-
-큐에 원하는 게 하나도 없었다면 그렇게 말하라. **당신이 줄 수 있는 가장 값진 정보다.**
-
-```bash
-runahead miss "새 컬럼 마이그레이션 작성"
-runahead stats
-```
-
-`runahead run`은 큐 바로 뒤에 에이전트별 토큰 내역을 함께 찍는다. 각 체인은 자기 토큰 비용을 달고 나오고, 큐 아래에는 `spent while you were away` 총합이 적힌다 — 검토 큐가 곧 청구서이기 때문이다.
-
-`stats`는 `~/.runahead/tokens.json`의 영속 원장을 읽어 각 `(작업 유형, 행동 유형)` 사후분포에 그 비용을 붙이고, 마지막에 지금까지 돌린 모든 투기의 총합을 찍는다.
-
-```
-miss rate: 8%
-
-  action                                  p    sd    n   avg tok   total tok
-  feature|write-tests                  0.98  0.04   42    10,400     436,800
-  feature|add-edge-cases               0.71  0.09   31    12,340     382,540
-  feature|error-handling               0.44  0.11   18     9,950     179,100
-  feature|responsive-ui                0.31  0.18    4    20,560      82,240
-
-  total spent across all speculation: 1,080,680 tokens
-```
-
-토큰 컬럼은 큐가 아니라 원장에서 온다. 그래서 실행 사이에 남고 모든 에이전트 호출을 센다 — `avg tok`은 그 투기를 한 번 더 돌리면 들 비용, `total tok`은 그 습관이 지금까지 쓴 비용이다.
-
-토큰 한 개 안 쓰고 학습 루프가 수렴하는 걸 보려면 합성 사용자로 돌린다.
-
-```bash
-runahead simulate
-```
-
-당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 — 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
 
 ## 에이전트
 
