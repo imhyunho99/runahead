@@ -1,5 +1,7 @@
 # runahead
 
+[![PyPI](https://img.shields.io/pypi/v/runahead)](https://pypi.org/project/runahead/) [![Python](https://img.shields.io/pypi/pyversions/runahead)](https://pypi.org/project/runahead/) [![License](https://img.shields.io/pypi/l/runahead)](LICENSE)
+
 Speculative parallel execution for coding agents.
 
 A coding agent finishes a task and stops to ask what's next. You aren't there. Nothing happens until you come back and answer. `runahead` guesses the answers, runs them in isolated worktrees while you're away, and hands you a queue to pick from.
@@ -26,9 +28,27 @@ Bypass mode trades control for autonomy. runahead keeps both: the decision still
 Requires Python 3.10+, git, and a coding agent CLI on `PATH`. No dependencies.
 
 ```bash
+pip install runahead
+```
+
+<details>
+<summary>From source</summary>
+
+```bash
+pip install runahead
+```
+
+<details>
+<summary>소스에서 설치</summary>
+
+```bash
 git clone https://github.com/imhyunho99/runahead
 cd runahead && pip install -e .
 ```
+
+</details>
+
+</details>
 
 ## Use
 

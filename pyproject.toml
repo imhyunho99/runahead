@@ -1,15 +1,42 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "runahead"
 version = "0.1.0"
-description = "Speculative parallel execution for coding agents"
+description = "Speculative parallel execution for coding agents. Bypass mode removes your choice; runahead defers it."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hyunho Na" }]
+keywords = [
+  "coding-agents",
+  "agentic-coding",
+  "claude-code",
+  "speculative-execution",
+  "developer-tools",
+  "git-worktree",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Utilities",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/imhyunho99/runahead"
+Repository = "https://github.com/imhyunho99/runahead"
+Issues = "https://github.com/imhyunho99/runahead/issues"
 
 [project.scripts]
 runahead = "runahead.cli:main"
