@@ -5,7 +5,7 @@
 #   vhs docs/demo.tape        # → docs/demo.gif
 #
 # simulate 는 합성 사용자를 상대로 학습 루프만 돌린다.
-# 에이전트 CLI 도, API 키도, 토큰 비용도 필요 없다 — 그래서 데모로 쓴다.
+# 에이전트 CLI 도, API 키도, 토큰 비용도 필요 없다 - 그래서 데모로 쓴다.
 
 Output docs/demo.gif
 

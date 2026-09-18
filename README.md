@@ -83,7 +83,7 @@ miss rate: 8%
   total spent across all speculation: 1,080,680 tokens
 ```
 
-The token columns come from the ledger, not the queue, so they persist across runs and count every agent invocation — the avg is what one more of that speculation will likely cost, and the total is what the habit has cost so far.
+The token columns come from the ledger, not the queue, so they persist across runs and count every agent invocation - the avg is what one more of that speculation will likely cost, and the total is what the habit has cost so far.
 
 To see the learning loop converge without spending a single token, run it against a synthetic user:
 
@@ -108,9 +108,9 @@ stopped at the reversibility boundary: push, pr, deploy
 budget: tokens 84,000/200,000 · 18m/30m · actions 6/12
 ```
 
-Each chain carries its own token cost, and the total is spelled out because the review queue is also the bill — that spend already happened while you were away, whether or not you accept the line.
+Each chain carries its own token cost, and the total is spelled out because the review queue is also the bill - that spend already happened while you were away, whether or not you accept the line.
 
-`runahead run` also prints a per-agent breakdown right after the queue, so you can see which speculation ate the budget. Each row is one agent invocation — a chain contributes one row per step, so `write-tests -> run-tests -> draft-commit` shows up as three lines that sum to its chain total above:
+`runahead run` also prints a per-agent breakdown right after the queue, so you can see which speculation ate the budget. Each row is one agent invocation - a chain contributes one row per step, so `write-tests -> run-tests -> draft-commit` shows up as three lines that sum to its chain total above:
 
 ```
 tokens per agent:
@@ -124,18 +124,18 @@ tokens per agent:
   total                          84,000
 ```
 
-You answer per line. Rebase does the composing. You never see a combination matrix — that would multiply the cost this tool exists to divide.
+You answer per line. Rebase does the composing. You never see a combination matrix - that would multiply the cost this tool exists to divide.
 
 ## How it works
 
-Speculation is not branch prediction. Nothing in the machine resolves the branch — a slow oracle does, and the oracle is you. So this is run-ahead execution, and its value scales with how long you're away, not with how fast the agent is.
+Speculation is not branch prediction. Nothing in the machine resolves the branch - a slow oracle does, and the oracle is you. So this is run-ahead execution, and its value scales with how long you're away, not with how fast the agent is.
 
 Each guess is an **action**: one prompt, one isolated worktree, one patch. Actions are the unit of storage, acceptance, and learning. That is why a rebase conflict can kill one of them without touching the rest.
 
 Actions fall into two lanes:
 
-- **Fixed lane** — orthogonal work (tests, lint, commit draft). Independent checkboxes. Accepting all of them is the default, so it costs you nothing to review.
-- **Predicted lane** — competing work (edge cases, error handling, UI). Radio buttons. You have to read and choose.
+- **Fixed lane** - orthogonal work (tests, lint, commit draft). Independent checkboxes. Accepting all of them is the default, so it costs you nothing to review.
+- **Predicted lane** - competing work (edge cases, error handling, UI). Radio buttons. You have to read and choose.
 
 The whole thing rests on one constraint:
 
@@ -145,7 +145,7 @@ Otherwise runahead hasn't removed work, it has multiplied it. Every design decis
 
 ## What it learns
 
-One Beta counter per `(task kind, action kind)`. That's it — no fine-tuning, no embeddings, no vector database. A session yields three to five labels; there is no gradient to see.
+One Beta counter per `(task kind, action kind)`. That's it - no fine-tuning, no embeddings, no vector database. A session yields three to five labels; there is no gradient to see.
 
 ```
 feature|write-tests      alpha=47 beta=6    p=0.87
@@ -153,13 +153,13 @@ feature|add-edge-cases   alpha=12 beta=19   p=0.39
 feature|responsive-ui    alpha=2  beta=1    p=0.67  <- three tries. not trusted.
 ```
 
-Confidence `p` turns three dials at once: how many competing variants to generate, whether the action earns children, and whether it can be auto-accepted. Auto-accept requires a high mean **and** a tight posterior — 2 of 3 successes has a mean of 0.67 and tells you nothing.
+Confidence `p` turns three dials at once: how many competing variants to generate, whether the action earns children, and whether it can be auto-accepted. Auto-accept requires a high mean **and** a tight posterior - 2 of 3 successes has a mean of 0.67 and tells you nothing.
 
 Three consequences fall out of using Beta rather than a ratio:
 
-**Exploration is built in.** Candidates are ranked by sampling from the posterior (Thompson sampling), not by its mean. Without this, the system dies of exposure bias: it proposes A, you accept the A in front of you, the statistics tilt toward A, and B — which you actually wanted — never appears on screen to be chosen. A wide posterior occasionally draws high, and that is the only way the truth gets a chance to surface. There is a regression test for exactly this.
+**Exploration is built in.** Candidates are ranked by sampling from the posterior (Thompson sampling), not by its mean. Without this, the system dies of exposure bias: it proposes A, you accept the A in front of you, the statistics tilt toward A, and B - which you actually wanted - never appears on screen to be chosen. A wide posterior occasionally draws high, and that is the only way the truth gets a chance to surface. There is a regression test for exactly this.
 
-**Graduation and demotion are free.** As `p` rises an action stops being offered as one of three and starts being applied silently. As `p` falls it drops back. Your personal `/ship` grows on its own instead of being written by hand — that is the actual delta over a fixed post-task script.
+**Graduation and demotion are free.** As `p` rises an action stops being offered as one of three and starts being applied silently. As `p` falls it drops back. Your personal `/ship` grows on its own instead of being written by hand - that is the actual delta over a fixed post-task script.
 
 **The queue gets shorter, not deeper.** Reversibility caps depth long before confidence does. What improves with learning is that you're asked less.
 
@@ -169,7 +169,7 @@ Priors are hierarchical: a global habit seeds each new repo, so cold start happe
 
 Accept rate is measured only over what the system chose to show you. It climbs as the system narrows onto its own habits, which looks like learning and isn't.
 
-**Miss rate** — how often you ignored the queue entirely and asked for something else — cannot be gamed that way. It names the actions the predictor failed to imagine. Depth is gated on it.
+**Miss rate** - how often you ignored the queue entirely and asked for something else - cannot be gamed that way. It names the actions the predictor failed to imagine. Depth is gated on it.
 
 Rebase conflicts are the third label. Two actions believed orthogonal whose patches don't compose is not a bug; it's `do not propose this pair together again`.
 
@@ -177,7 +177,7 @@ Rebase conflicts are the third label. Two actions believed orthogonal whose patc
 
 Speculation is justified exactly where rollback is free. Inside a worktree it is. `git push` is not, nor is a deploy, a migration, or an outbound POST.
 
-runahead never crosses that line, and confidence never unlocks it. At `p = 0.99` it still does not push. The boundary is drawn by the machine, not by checkpoints you place by hand — otherwise you couldn't walk away, which was the entire point.
+runahead never crosses that line, and confidence never unlocks it. At `p = 0.99` it still does not push. The boundary is drawn by the machine, not by checkpoints you place by hand - otherwise you couldn't walk away, which was the entire point.
 
 A budget (tokens, wall clock, action count) bounds the reversible work too. Nobody is watching for thirty minutes; without a ceiling the predicted lane will happily inflate itself.
 
@@ -199,9 +199,9 @@ A budget (tokens, wall clock, action count) bounds the reversible work too. Nobo
 
 Learning data stays out of the repo on purpose. Commit it and your habits average with your teammates', and an averaged habit predicts nobody.
 
-`tokens.json` is the persistent token ledger. Every action is one agent invocation, and its spend is charged to its `(task kind, action kind)` at run time — independent of whether you later accept or reject it, because the tokens were burned either way. That is what lets `stats` answer *which speculations are worth what they cost me* over the whole history, not just this run.
+`tokens.json` is the persistent token ledger. Every action is one agent invocation, and its spend is charged to its `(task kind, action kind)` at run time - independent of whether you later accept or reject it, because the tokens were burned either way. That is what lets `stats` answer *which speculations are worth what they cost me* over the whole history, not just this run.
 
-Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens — the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
+Worktrees live outside the repository, and that is load-bearing. Hand a coding agent a cwd inside `.git` and it edits nothing, returns success, and bills you for the tokens - the empty patch is the only symptom. Put them in the working tree instead and `git status` goes dirty, which is precisely what `accept` refuses to run against.
 
 ## Agents
 
@@ -229,13 +229,13 @@ They compose: an action with low confidence needs competing variants, which is e
 
 ## Status
 
-v1, exercised end to end against a real `claude`: it read a freshly committed `parse_duration()` that silently returned `0` on garbage input, proposed error handling and documentation, wrote validation plus tests for the first, and — since both patches touched the same file — applied one, isolated the other as a conflict, rolled the tree back clean, and stored the pair as a label.
+v1, exercised end to end against a real `claude`: it read a freshly committed `parse_duration()` that silently returned `0` on garbage input, proposed error handling and documentation, wrote validation plus tests for the first, and - since both patches touched the same file - applied one, isolated the other as a conflict, rolled the tree back clean, and stored the pair as a label.
 
 The core has 43 tests and no LLM in any of them. Swap in `FakeExecutor` and the scheduler, budget, boundary, and patch merge all run for real. That's the second reason the executor is a separate seam.
 
 Chains run one at a time. The name says parallel; v1 is serial on purpose, because the rate limit is the real bottleneck and the safe concurrency has to be measured before it is chosen.
 
-The claim runahead lives on is that `p` converges to something useful. `runahead simulate` drives the real learning path — plan()'s Thompson ranking, the policy, the store — against a synthetic user whose preferences are fixed in advance, and watches the statistics find them:
+The claim runahead lives on is that `p` converges to something useful. `runahead simulate` drives the real learning path - plan()'s Thompson ranking, the policy, the store - against a synthetic user whose preferences are fixed in advance, and watches the statistics find them:
 
 ```
 miss rate, early to late
@@ -247,9 +247,9 @@ draft-commit        0.85     0.84        100%
 add-edge-cases      0.48     0.25          0%
 ```
 
-Two facts fall out, one reassuring and one worth stating plainly. Wanted actions — the ones that stay in the queue — are estimated accurately and take every slot within a few dozen sessions, and the miss rate drops to zero. Distractors converge to an *under*estimate (0.48 learned as 0.25), because an action that stops being shown stops being learned about; its estimate freezes low. That is correct behaviour, not a bug — the estimate only has to be low enough to keep the action out, and Thompson sampling stops it collapsing to zero so it can still be revived if the real preference shifts.
+Two facts fall out, one reassuring and one worth stating plainly. Wanted actions - the ones that stay in the queue - are estimated accurately and take every slot within a few dozen sessions, and the miss rate drops to zero. Distractors converge to an *under*estimate (0.48 learned as 0.25), because an action that stops being shown stops being learned about; its estimate freezes low. That is correct behaviour, not a bug - the estimate only has to be low enough to keep the action out, and Thompson sampling stops it collapsing to zero so it can still be revived if the real preference shifts.
 
-This validates the mechanism under a stated user model. It does not prove real humans behave this way — only real use, and a falling miss rate over real sessions, settles that. But convergence failing here would have ruled it out, so the cheap falsifier passed.
+This validates the mechanism under a stated user model. It does not prove real humans behave this way - only real use, and a falling miss rate over real sessions, settles that. But convergence failing here would have ruled it out, so the cheap falsifier passed.
 
 MIT.
 
@@ -315,7 +315,7 @@ runahead miss "새 컬럼 마이그레이션 작성"
 runahead stats
 ```
 
-`runahead run`은 큐 바로 뒤에 에이전트별 토큰 내역을 함께 찍는다. 각 체인은 자기 토큰 비용을 달고 나오고, 큐 아래에는 `spent while you were away` 총합이 적힌다 — 검토 큐가 곧 청구서이기 때문이다.
+`runahead run`은 큐 바로 뒤에 에이전트별 토큰 내역을 함께 찍는다. 각 체인은 자기 토큰 비용을 달고 나오고, 큐 아래에는 `spent while you were away` 총합이 적힌다 - 검토 큐가 곧 청구서이기 때문이다.
 
 `stats`는 `~/.runahead/tokens.json`의 영속 원장을 읽어 각 `(작업 유형, 행동 유형)` 사후분포에 그 비용을 붙이고, 마지막에 지금까지 돌린 모든 투기의 총합을 찍는다.
 
@@ -331,7 +331,7 @@ miss rate: 8%
   total spent across all speculation: 1,080,680 tokens
 ```
 
-토큰 컬럼은 큐가 아니라 원장에서 온다. 그래서 실행 사이에 남고 모든 에이전트 호출을 센다 — `avg tok`은 그 투기를 한 번 더 돌리면 들 비용, `total tok`은 그 습관이 지금까지 쓴 비용이다.
+토큰 컬럼은 큐가 아니라 원장에서 온다. 그래서 실행 사이에 남고 모든 에이전트 호출을 센다 - `avg tok`은 그 투기를 한 번 더 돌리면 들 비용, `total tok`은 그 습관이 지금까지 쓴 비용이다.
 
 토큰 한 개 안 쓰고 학습 루프가 수렴하는 걸 보려면 합성 사용자로 돌린다.
 
@@ -339,7 +339,7 @@ miss rate: 8%
 runahead simulate
 ```
 
-당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 — 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
+당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 - 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
 
 ## 어떻게 동작하는가
 
@@ -349,8 +349,8 @@ runahead simulate
 
 행동은 두 레인으로 갈린다.
 
-- **고정 레인** — 직교적 작업(테스트, 린트, 커밋 초안). 독립적인 체크박스. 전부 수락이 기본값이라 검토 비용이 사실상 없다.
-- **예측 레인** — 경쟁적 작업(엣지케이스, 에러 핸들링, UI). 라디오 버튼. 읽고 골라야 한다.
+- **고정 레인** - 직교적 작업(테스트, 린트, 커밋 초안). 독립적인 체크박스. 전부 수락이 기본값이라 검토 비용이 사실상 없다.
+- **예측 레인** - 경쟁적 작업(엣지케이스, 에러 핸들링, UI). 라디오 버튼. 읽고 골라야 한다.
 
 전체가 단 하나의 제약 위에 서 있다.
 
@@ -384,7 +384,7 @@ feature|responsive-ui    alpha=2  beta=1    p=0.67  <- 시도 3번. 못 믿는�
 
 수락률은 **시스템이 보여주기로 고른 것들 중에서만** 측정된다. 시스템이 자기 습관으로 좁혀 들어갈수록 올라간다. 학습처럼 보이지만 아니다.
 
-**miss rate** — 큐를 통째로 무시하고 전혀 다른 걸 시킨 비율 — 는 그런 식으로 조작되지 않는다. 예측기가 **상상하지 못한** 행동이 무엇인지 알려준다. 깊이는 여기에 걸어둔다.
+**miss rate** - 큐를 통째로 무시하고 전혀 다른 걸 시킨 비율 - 는 그런 식으로 조작되지 않는다. 예측기가 **상상하지 못한** 행동이 무엇인지 알려준다. 깊이는 여기에 걸어둔다.
 
 rebase 충돌이 세 번째 라벨이다. 직교하리라 믿었던 두 행동의 패치가 합쳐지지 않는 것은 버그가 아니라 `이 둘을 같이 제안하지 마라`는 뜻이다.
 
@@ -414,9 +414,9 @@ runahead는 그 선을 넘지 않으며, **확신도는 이 잠금을 절대 풀
 
 학습 데이터를 레포 밖에 두는 것은 의도다. 커밋하면 당신의 습관이 동료의 습관과 평균되고, **평균된 습관은 누구도 예측하지 못한다.**
 
-`tokens.json`은 영속 토큰 원장이다. 행동 하나가 곧 에이전트 호출 하나이고, 그 비용은 나중에 수락하든 거부하든 상관없이 **실행 시점에** 해당 `(작업 유형, 행동 유형)`에 청구된다 — 토큰은 어느 쪽이든 이미 태워졌기 때문이다. `stats`가 이번 실행뿐 아니라 전체 이력에 걸쳐 *어떤 투기가 비용만큼 값어치를 하는가*에 답할 수 있는 근거가 이것이다.
+`tokens.json`은 영속 토큰 원장이다. 행동 하나가 곧 에이전트 호출 하나이고, 그 비용은 나중에 수락하든 거부하든 상관없이 **실행 시점에** 해당 `(작업 유형, 행동 유형)`에 청구된다 - 토큰은 어느 쪽이든 이미 태워졌기 때문이다. `stats`가 이번 실행뿐 아니라 전체 이력에 걸쳐 *어떤 투기가 비용만큼 값어치를 하는가*에 답할 수 있는 근거가 이것이다.
 
-worktree를 레포 밖에 두는 것도 하중을 받는 결정이다. 코딩 에이전트에게 `.git` 안의 cwd를 주면 아무것도 편집하지 않고 성공을 반환하며 토큰만 청구한다 — 빈 패치가 유일한 증상이다. 반대로 작업 트리 안에 두면 `git status`가 더러워지는데, 그건 정확히 `accept`가 실행을 거부하는 조건이다.
+worktree를 레포 밖에 두는 것도 하중을 받는 결정이다. 코딩 에이전트에게 `.git` 안의 cwd를 주면 아무것도 편집하지 않고 성공을 반환하며 토큰만 청구한다 - 빈 패치가 유일한 증상이다. 반대로 작업 트리 안에 두면 `git status`가 더러워지는데, 그건 정확히 `accept`가 실행을 거부하는 조건이다.
 
 ## 에이전트
 
@@ -464,7 +464,7 @@ draft-commit        0.85     0.84        100%
 add-edge-cases      0.48     0.25          0%
 ```
 
-두 가지가 딸려 나온다. 하나는 안심되는 것, 하나는 정직하게 짚어야 할 것. **원하는 행동**(큐에 남는 것)은 정확히 추정되고 수십 세션 안에 모든 슬롯을 차지하며, miss rate는 0으로 떨어진다. **방해 행동**은 **과소추정**으로 수렴한다(실제 0.48이 0.25로). 안 보여주기 시작한 행동은 학습이 멈추고 추정값이 낮은 값에 얼어붙기 때문이다. 이건 버그가 아니라 올바른 동작이다 — 추정값은 그 행동을 밀어내기에 충분할 만큼만 낮으면 되고, Thompson 샘플링이 0으로 붕괴하는 걸 막아 실제 선호가 바뀌면 되살아날 수 있게 한다.
+두 가지가 딸려 나온다. 하나는 안심되는 것, 하나는 정직하게 짚어야 할 것. **원하는 행동**(큐에 남는 것)은 정확히 추정되고 수십 세션 안에 모든 슬롯을 차지하며, miss rate는 0으로 떨어진다. **방해 행동**은 **과소추정**으로 수렴한다(실제 0.48이 0.25로). 안 보여주기 시작한 행동은 학습이 멈추고 추정값이 낮은 값에 얼어붙기 때문이다. 이건 버그가 아니라 올바른 동작이다 - 추정값은 그 행동을 밀어내기에 충분할 만큼만 낮으면 되고, Thompson 샘플링이 0으로 붕괴하는 걸 막아 실제 선호가 바뀌면 되살아날 수 있게 한다.
 
 이것은 **명시된 사용자 모델 아래에서 메커니즘을 검증**한 것이지, 실제 사람이 이렇게 행동함을 증명한 것은 아니다. 그건 실제 사용과 실제 세션에 걸친 miss rate 하락만이 판정한다. 다만 여기서 수렴이 실패했다면 실제에서도 불가능했을 것이므로, 값싼 반증 시도는 통과했다.
 
