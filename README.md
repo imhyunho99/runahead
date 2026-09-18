@@ -126,6 +126,31 @@ tokens per agent:
 
 You answer per line. Rebase does the composing. You never see a combination matrix - that would multiply the cost this tool exists to divide.
 
+## See it work without an agent
+
+`simulate` drives the whole learning loop against a synthetic user. No agent CLI, no API key, no tokens spent.
+
+```console
+$ runahead simulate --sessions 500 --seed 42
+sessions: 500   catalog: 6
+
+miss rate, early to late (each column = equal slice of the run)
+  32%  4%  0%  0%  0%  0%  0%  0%  0%  0%
+  -                                    
+
+action                true p  learned  shown early  shown late
+write-tests             0.90     0.91         82%       100%
+draft-commit            0.85     0.88        100%       100%
+add-edge-cases          0.48     0.44          7%         0%
+error-handling          0.45     0.25          2%         0%
+update-docs             0.40     0.43          5%         0%
+perf-pass               0.35     0.33          4%         0%
+
+this validates the mechanism under a stated user model, not real humans. only real use settles that.
+```
+
+The two actions the synthetic user almost always wants graduate to always-shown; the four it rarely wants stop being offered. Miss rate is the one number that cannot be gamed by narrowing.
+
 ## How it works
 
 Speculation is not branch prediction. Nothing in the machine resolves the branch - a slow oracle does, and the oracle is you. So this is run-ahead execution, and its value scales with how long you're away, not with how fast the agent is.
@@ -340,6 +365,31 @@ runahead simulate
 ```
 
 당신은 줄 단위로 예/아니오만 한다. 조합은 rebase가 만든다. 조합표는 절대 보지 않는다 - 그건 이 도구가 나누려는 바로 그 비용을 곱하는 짓이다.
+
+## 에이전트 없이 돌려보기
+
+`simulate` 는 합성 사용자를 상대로 학습 루프 전체를 돌린다. 에이전트 CLI 도, API 키도, 토큰 비용도 없다.
+
+```console
+$ runahead simulate --sessions 500 --seed 42
+sessions: 500   catalog: 6
+
+miss rate, early to late (each column = equal slice of the run)
+  32%  4%  0%  0%  0%  0%  0%  0%  0%  0%
+  -                                    
+
+action                true p  learned  shown early  shown late
+write-tests             0.90     0.91         82%       100%
+draft-commit            0.85     0.88        100%       100%
+add-edge-cases          0.48     0.44          7%         0%
+error-handling          0.45     0.25          2%         0%
+update-docs             0.40     0.43          5%         0%
+perf-pass               0.35     0.33          4%         0%
+
+this validates the mechanism under a stated user model, not real humans. only real use settles that.
+```
+
+합성 사용자가 거의 항상 원하는 두 개는 항상 보이는 쪽으로 승격하고, 좀처럼 원하지 않는 네 개는 제안에서 빠진다. miss rate 는 좁히기로 조작할 수 없는 유일한 지표다.
 
 ## 어떻게 동작하는가
 
